@@ -1,0 +1,65 @@
+name: Release Binary
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    permissions:
+      contents: write
+      packages: write
+      
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package Binary
+        run: |
+          zip aws-url-copy-tool-macos.zip target/release/aws-url-copy-tool -j
+
+      - name: Get Version
+        id: get_version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+
+      - name: Prepare Release
+        run: |
+          set -e
+          cp resources/aws-url-copy-tool.template.rb Formula/aws-url-copy-tool.rb
+          # Replace "REPLACE_WITH_VERSION" with the new version in the formula file
+
+          sed -i "" "s/REPLACE_WITH_VERSION/${{ env.VERSION }}/" Formula/aws-url-copy-tool.rb
+
+          # Get the new SHA256 checksum
+          ZIP_SHA=$(shasum -a 256 aws-url-copy-tool-macos.zip | awk '{print $1}')
+
+          # Replace "REPLACE_WITH_ZIP_SHA" with the new SHA256 checksum in the formula file
+          sed -i "" "s/REPLACE_WITH_ZIP_SHA/$ZIP_SHA/" Formula/aws-url-copy-tool.rb
+          
+          git add Formula/aws-url-copy-tool.rb
+          git config --local user.name "${{ github.actor }}"
+          git commit -m "Update formula file to version ${{ env.VERSION }}"
+          git push
+
+          echo "Formula file updated successfully."
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: aws-url-copy-tool-macos.zip
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
